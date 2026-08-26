@@ -203,3 +203,14 @@ module.exports = {
     getTickets,
     createTicket
 };
+
+
+
+// {
+//     "university_id": 1,
+//     "form_number": "272728",
+//     "student_name": "Aman Gupta",
+//     "roll_number": "123456",
+//     "correction_type": "Marks Correction",
+//     "correction_details": "Mathematics marks are incorrect"
+// }
