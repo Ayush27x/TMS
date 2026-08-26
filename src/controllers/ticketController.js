@@ -90,12 +90,7 @@ db.query(sql,
     }
 )
 
-
-
-
-
-
-
 module.exports = {
-     getTickets
+     getTickets,
+     createTicket
 };
