@@ -14,18 +14,20 @@ const ticketRoutes = require("./routes/ticketRoutes");
 app.use(cors());
 app.use(express.json());
 
-
-// TicketRoutes.js
-app.use("/api/tickets", ticketRoutes);
+ // TicketRoutes.js
+// to register/mount middleware or router with the application
+app.use("/api/tickets",
+     ticketRoutes);
 
 
 // req, res = call back function
-app.get("/",(req, res) =>{
+app.get("/",
+    (req, res) =>{
     res.json({
         message : "TMS backend running"
     });
 });
 
 
-
+// exporting app.js to server.js
 module.exports = app;
