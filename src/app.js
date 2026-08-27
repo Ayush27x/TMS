@@ -15,10 +15,9 @@ app.use(cors());
 app.use(express.json());
 
 
-// TicketRoutes.js
+ // TicketRoutes.js
 // to register/mount middleware or router with the application
-app.use("/api/tickets",
-     ticketRoutes);
+router.get("/:id", getTicketById);
 
 
 // req, res = call back function
