@@ -35,6 +35,55 @@ const getTickets = (req, res) => {
 
 
 
+// =============== getTicketsById =====================
+// Retrieve one tickets from using ID
+const getTicketById = (req, res) => {
+
+        // Get ticket ID from URL
+        const {id} = req.params;
+
+
+            // Sql query 
+            const sql = `
+            SELECT * FROM tickets 
+            WHERE id = ?`;
+
+                // Execute Query
+                db.query(sql,
+                    [id], // [id] provide value to placeholder[?]
+                    (err, result) =>{
+
+                            // Error
+                            if(err) {
+                                    console.error("Error Fetching Ticket", err.message)
+
+                                            return res.status(500).json({
+                                                    message : "Failed to fetch Ticket"
+                                                                        });
+                                    }
+
+
+                            //Ticket not Found Error
+                            if(result.length === 0) {
+                                            return res.status(404).json({
+                                                    message : "Ticket not found"
+                                                                        });
+                                    }
+
+                
+                // Success
+                // First item of the array
+                res.json(result[0]);
+
+
+
+            }
+        );
+
+};
+
+
+
 // =============== createTicket =====================
 
 const createTicket = (req, res) => {
@@ -201,16 +250,6 @@ const createTicket = (req, res) => {
 
 module.exports = {
     getTickets,
+    getTicketById,
     createTicket
 };
-
-
-
-// {
-//     "university_id": 1,
-//     "form_number": "272728",
-//     "student_name": "Aman Gupta",
-//     "roll_number": "123456",
-//     "correction_type": "Marks Correction",
-//     "correction_details": "Mathematics marks are incorrect"
-// }

@@ -14,7 +14,8 @@ const ticketRoutes = require("./routes/ticketRoutes");
 app.use(cors());
 app.use(express.json());
 
- // TicketRoutes.js
+
+// TicketRoutes.js
 // to register/mount middleware or router with the application
 app.use("/api/tickets",
      ticketRoutes);
