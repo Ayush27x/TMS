@@ -37,11 +37,11 @@ const getTickets = (req, res) => {
 
 // =============== getTicketsById =====================
 // Retrieve one tickets from using ID
+
 const getTicketById = (req, res) => {
 
         // Get ticket ID from URL
         const {id} = req.params;
-
 
             // Sql query 
             const sql = `
@@ -50,7 +50,8 @@ const getTicketById = (req, res) => {
 
                 // Execute Query
                 db.query(sql,
-                    [id], // [id] provide value to placeholder[?]
+                    // [id] provide value to placeholder[?]
+                    [id], 
                     (err, result) =>{
 
                             // Error
@@ -72,9 +73,8 @@ const getTicketById = (req, res) => {
 
                 
                 // Success
-                // First item of the array
+                // First item of the [0]array
                 res.json(result[0]);
-
 
 
             }
@@ -98,8 +98,7 @@ const createTicket = (req, res) => {
         correction_details
     } = req.body;
 
-
-    // Get current year
+  // Get current year
     const currentYear = new Date().getFullYear();
 
 
@@ -208,7 +207,7 @@ const createTicket = (req, res) => {
                                     message: "Failed to generate ticket number"
                                 });
                             });
-                        }
+                        };
 
 
                         // Commit transaction
@@ -248,8 +247,140 @@ const createTicket = (req, res) => {
 
 
 
+// =============== updateTicketStatus =====================
+// Change existing ticket status and store it in database
+//=========================================================
+
+const updateTicketStatus = (req, res) => {
+
+    // GEt ticket id from URL and status from request body
+    const { id } = req.params;
+    const { status }  = req.body;
+
+
+        // Check whether status is valid
+        const validStatuses = [
+            "NEW",
+            "IN_PROGRESS",
+            "COMPLETED",
+            "CORRECTION_REQUIRED",
+        ];
+
+
+            //if the status is not in the allowed list then return an error. 
+            if(!validStatuses.includes(status)) { //includes() check in array give value is exist or not
+            return res.status(400).json({
+                message : "Invalid ticket status"
+                })
+            }
+
+                // First get current ticket status
+                const getTicketSql = `
+                    SELECT status
+                    FROM tickets
+                    WHERE id = ?`;
+
+
+                    //Run sql query and get ? value 
+                    db.query(
+                        getTicketSql,
+                        [id],
+                        (err, result) => {
+
+                            // Database error
+                            if(err) {
+                                console.error("Error fetching ticket states : ",
+                                     err.message
+                                    );
+
+                                // Response error
+                                return res.status(500).json({
+                                    message : "Failed to fetch ticket"
+                                });
+                            }
+
+                            // If ticket not found
+                            if(result.length===0) {
+                            
+                                return res.status(404).json({
+                                    message : "Result not found"
+                                });
+                            }
+
+
+                                // Store old result
+                                const oldStatus = result[0].status;
+
+                                    //Update ticket statues
+                                    const updateSql = `
+                                    UPDATE tickets
+                                    SET status = ? 
+                                    WHERE id = ?
+                                    `;
+
+                                    db.query(
+                                        updateSql,
+                                        [status, id],
+                                        (err) => {
+
+                                            // Update error
+                                            if(err) {
+                                            console.error("Error updating ticket status : ", err.message);
+
+                                            return res.status(500).json({
+                                            message : "Failed to update ticket status"
+                                            });
+                                        }
+                                        }
+                                        
+                                    )
+
+                                        // Insert history recode
+                                        const historySql = `
+                                        INSERT INTO ticket_history (
+                                        ticket_id,
+                                        user_id,
+                                        action,
+                                        old_status,
+                                        new_status )
+                                        VALUES(?,?,?,?,?)`;
+
+
+                                        // For now using operator ID=2 for temp. use
+                                        const userId = 2;
+
+                                            db.query(
+                                                historySql,
+                                                [id, userId, "STATES_UPDATE", oldStatus, status],
+                                                (err) => {
+
+                                                    // History error
+                                                    if(err) {
+                                                        console.error("Error creating history")
+
+                                                        return res.status(500).json({
+                                                            message : "Statues updated but history failed"
+                                                        });
+                                                    }
+
+                                                    // Success message
+                                                    res.json({
+                                                        message : "Ticket updated successfully",
+                                                        ticket_id : id,
+                                                        old_status : oldStatus,
+                                                        new_status : status
+                                                    });
+                                                }
+                                            );
+                        }
+                    )
+
+}
+
+
 module.exports = {
     getTickets,
     getTicketById,
-    createTicket
+    createTicket,
+    updateTicketStatus
 };
