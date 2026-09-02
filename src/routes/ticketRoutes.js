@@ -22,7 +22,7 @@ router.get("/:id", getTicketById);
 // POST = Create/send new data
 router.post("/", createTicket);
 
-
+// Patch : update the specific existing data.
 router.patch("/:id/status", updateTicketStatus);
 
 module.exports = router;
