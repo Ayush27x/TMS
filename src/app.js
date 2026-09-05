@@ -4,9 +4,9 @@ const cors = require("cors");
 const app = express();
 
 
-// Import db.js, ticketRoutes.js
-const db = require("./config/db");
+// Import db.js, ticketRoutes.js, authRoutes.js
 const ticketRoutes = require("./routes/ticketRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 
 //cors send request react to express
@@ -19,6 +19,11 @@ app.use(express.json());
 // to register/mount middleware or router with the application
 app.use("/api/tickets",
      ticketRoutes);
+
+
+// Login API
+app.use("/api/auth",
+    authRoutes);
 
 
 // req, res = call back function
