@@ -1,5 +1,6 @@
 // Controller function
 
+
 // Import Database
 const db = require("../config/db");
 

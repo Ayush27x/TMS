@@ -1,3 +1,7 @@
+// Security middleware for authentication and authorization in the TMS
+
+//Middleware is use for receive and reject the request from client side.
+
 const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = "tms_super_secret_key";
@@ -11,7 +15,7 @@ const authenticateToken = (req, res, next) => {
 
         return res.status(401).json({
             message : "Access token required"
-        });
+       });
     }
 
     

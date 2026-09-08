@@ -1,3 +1,5 @@
+// Actual login works with JWT and bcrypt
+
 // Import database connection and bcrypt
 const db = require("../config/db");
 const bcrypt = require("bcrypt");
