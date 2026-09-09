@@ -13,6 +13,8 @@ const {
     authenticateToken
 } = require("../middleware/authMiddleware");
 
+const {authorizeRole} = require("../middleware/roleMiddleware");
+
 
 // When req. receive on "/ GET". Then call getTickets function 
 
@@ -27,7 +29,11 @@ router.get("/:id", getTicketById);
 router.post("/", createTicket);
 
 // Patch : update the specific existing data.
-router.patch("/:id/status", updateTicketStatus);
+router.patch("/:id/status",
+     authenticateToken,
+     authorizeRole("OPERATOR"),
+      updateTicketStatus,
+    );
 
 
 router.get("/", authenticateToken, getTickets);

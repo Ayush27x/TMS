@@ -388,7 +388,7 @@ const updateTicketStatus = (req, res) => {
 
 
                         // Temporary operator ID
-                        const userId = 2;
+                        const userId = req.user.id;
 
 
                         db.query(

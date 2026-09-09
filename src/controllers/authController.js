@@ -77,12 +77,18 @@ const login = async (req, res) => {
             }
 
 
+    //---------------------------------------------------
+    console.log("DATABASE USER:", user);
+    console.log("DATABASE ROLE:", user.role);
+    //---------------------------------------------------
+
+
             // Create JWT token
             const token = jwt.sign(
                 {
                     id : user.id,
                     username : user.username,
-                    role : user.roll
+                    role : user.role
                 },
                 JWT_SECRET,
                 {
