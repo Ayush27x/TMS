@@ -11,10 +11,47 @@ const db = require("../config/db");
 
 const getTickets = (req, res) => {
 
-    // SQL query for retrieving tickets
-    const sql = "SELECT * FROM tickets";
 
-    db.query(sql, (err, result) => {
+    //Get logged-in user's Role and university id
+    const {role, university_id} = req.user;
+
+
+    let sql;
+    let values = [];
+
+
+    // Operator can see all ticket
+    if (role === "OPERATOR") {
+
+        sql = `
+                SELECT *
+                FROM tickets
+                `;
+    }
+
+
+        // University can see only its own tickets
+        else if (role === "UNIVERSITY") {
+
+            sql = `
+                SELECT * 
+                FROM tickets
+                WHERE university_id = ?
+                `;
+
+                values = [university_id];
+            }
+
+                // Unknown role
+                else {
+                    return res.status(403).json({
+                        message : "access dined"
+                    });
+                }
+
+
+
+        db.query(sql, values, (err, result) => {
 
         // Error Section
         if (err) {
@@ -30,7 +67,7 @@ const getTickets = (req, res) => {
         }
 
         // Result Section
-        res.json(result);
+        return res.json(result);
     });
 };
 
@@ -43,16 +80,43 @@ const getTicketById = (req, res) => {
 
         // Get ticket ID from URL
         const {id} = req.params;
+        const {role, university_id} = req.user;
 
-            // Sql query 
-            const sql = `
-            SELECT * FROM tickets 
-            WHERE id = ?`;
+
+        let sql;
+        let values = [];
+        
+            if (role === "OPERATOR") {
+
+                // Sql query 
+                const sql = `
+                SELECT * FROM tickets 
+                WHERE id = ?`;
+
+                values = [id];
+            }
+
+                else if (role = "UNIVERSITY") {
+
+                    sql = `
+                        SELECT * FROM tickets
+                        WHERE id = ?
+                        AND
+                        university_id = ?
+                        `;
+
+                        values = [id, university_id];
+                }
+
+                    else {
+                        return res.status(403).json({
+                            message : "Access denied"
+                        });
+                    }
+
 
                 // Execute Query
-                db.query(sql,
-                    // [id] provide value to placeholder[?]
-                    [id], 
+                db.query(sql, values,
                     (err, result) =>{
 
                             // Error
@@ -64,25 +128,19 @@ const getTicketById = (req, res) => {
                                                                         });
                                     }
 
-
                             //Ticket not Found Error
                             if(result.length === 0) {
                                             return res.status(404).json({
                                                     message : "Ticket not found"
                                                                         });
                                     }
-
                 
                 // Success
                 // First item of the [0]array
-                res.json(result[0]);
-
-
+                return res.json(result[0]);
             }
         );
-
 };
-
 
 
 // =============== createTicket =====================
@@ -91,13 +149,28 @@ const createTicket = (req, res) => {
 
     // Get information from client
     const {
-        university_id,
         form_number,
         student_name,
         roll_number,
         correction_type,
         correction_details
     } = req.body;
+
+    const { university_id } = req.user;
+
+    if(
+        ! form_number ||
+        ! student_name ||
+        ! roll_number ||
+        ! correction_type ||
+        ! correction_details
+    ) 
+    {
+        return res.status(400).json({
+            message : "All felid are required"
+        });
+    }
+
 
   // Get current year
     const currentYear = new Date().getFullYear();

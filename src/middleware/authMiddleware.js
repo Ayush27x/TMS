@@ -1,6 +1,6 @@
 // Security middleware for authentication and authorization in the TMS
-
 //Middleware is use for receive and reject the request from client side.
+// Authentication
 
 const jwt = require("jsonwebtoken");
 

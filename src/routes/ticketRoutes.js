@@ -23,10 +23,14 @@ const {authorizeRole} = require("../middleware/roleMiddleware");
 router.get("/", authenticateToken, getTickets);
 
 // GET = get a single ticket from URL
-router.get("/:id", getTicketById);
+router.get("/:id",
+    authenticateToken,
+     getTicketById);
 
 // POST = Create/send new data
-router.post("/", createTicket);
+router.post("/",
+    authenticateToken,
+     createTicket);
 
 // Patch : update the specific existing data.
 router.patch("/:id/status",
