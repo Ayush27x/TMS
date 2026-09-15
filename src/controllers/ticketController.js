@@ -4,7 +4,7 @@
 const db = require("../config/db");
 
 
-// =============== getTickets =====================
+// ================== getTickets =====================
 // Retrieve tickets from database and send response to client
 
 const getTickets = (req, res) => {
@@ -607,10 +607,12 @@ const getTicketHistory = (req, res) => {
 
 
 // =============== createTicket =====================
+// Create a new ticket
 
 const createTicket = (req, res) => {
 
-    // Get information from client
+    //  GET DATA FROM REQUEST =================
+
     const {
         form_number,
         student_name,
@@ -619,31 +621,35 @@ const createTicket = (req, res) => {
         correction_details
     } = req.body;
 
+
+    // Get university ID from logged-in user
     const { university_id } = req.user;
 
-    if(
-        ! form_number ||
-        ! student_name ||
-        ! roll_number ||
-        ! correction_type ||
-        ! correction_details
-    ) 
-    {
+
+    //  REQUIRED FIELD VALIDATION =================
+
+    if (
+        !form_number ||
+        !student_name ||
+        !roll_number ||
+        !correction_type ||
+        !correction_details
+    ) {
+
         return res.status(400).json({
-            message : "All felid are required"
+            message: "All fields are required"
         });
     }
 
 
-  // Get current year
-    const currentYear = new Date().getFullYear();
+    //  CURRENT YEAR =================
+
+    const currentYear =
+        new Date().getFullYear();
 
 
-    // Temporary ticket number
-    const temporaryTicketNumber = `TEMP-${Date.now()}`;
+    //  START TRANSACTION =================
 
-
-    // Start transaction
     db.beginTransaction((err) => {
 
         if (err) {
@@ -654,134 +660,232 @@ const createTicket = (req, res) => {
             );
 
             return res.status(500).json({
-                message: "Failed to start transaction"
+                message:
+                    "Failed to start transaction"
             });
         }
 
 
-        // SQL query for inserting ticket
-        const sql = `
-            INSERT INTO tickets (
-                university_id,
+        //  CHECK DUPLICATE =================
+
+        const duplicateSql = `
+            SELECT
+                id,
                 ticket_number,
-                form_number,
-                student_name,
-                roll_number,
-                correction_type,
-                correction_details
+                status
+            FROM tickets
+            WHERE university_id = ?
+            AND form_number = ?
+            AND correction_type = ?
+            AND status IN (
+                'NEW',
+                'IN_PROGRESS',
+                'CORRECTION_REQUIRED'
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            LIMIT 1
         `;
 
 
-        // Execute INSERT query
         db.query(
-            sql,
+            duplicateSql,
             [
                 university_id,
-                temporaryTicketNumber,
                 form_number,
-                student_name,
-                roll_number,
-                correction_type,
-                correction_details
+                correction_type
             ],
+            (err, duplicateResult) => {
 
-            (err, result) => {
-
-                // INSERT error
+                // Duplicate check database error
                 if (err) {
 
                     return db.rollback(() => {
 
                         console.error(
-                            "Error creating ticket:",
+                            "Error checking duplicate ticket:",
                             err.message
                         );
 
                         return res.status(500).json({
-                            message: "Failed to create ticket"
+                            message:
+                                "Failed to check duplicate ticket"
                         });
                     });
                 }
 
 
-                // Get automatically generated ID
-                const ticketId = result.insertId;
+                //  DUPLICATE FOUND =================
+
+                if (duplicateResult.length > 0) {
+
+                    const existingTicket =
+                        duplicateResult[0];
+
+                    return db.rollback(() => {
+
+                        return res.status(409).json({
+
+                            message:
+                                "An active ticket already exists for this correction",
+
+                            ticket_number:
+                                existingTicket.ticket_number,
+
+                            status:
+                                existingTicket.status
+                        });
+                    });
+                }
 
 
-                // Generate actual ticket number
-                const ticketNumber =
-                    `MGSU-${currentYear}-${String(ticketId).padStart(4, "0")}`;
+                //  TEMPORARY TICKET NUMBER =================
+
+                const temporaryTicketNumber =
+                    `TEMP-${Date.now()}`;
 
 
-                // SQL query for updating ticket number
-                const updateSql = `
-                    UPDATE tickets
-                    SET ticket_number = ?
-                    WHERE id = ?
+                //  INSERT TICKET =================
+
+                const sql = `
+                    INSERT INTO tickets (
+                        university_id,
+                        ticket_number,
+                        form_number,
+                        student_name,
+                        roll_number,
+                        correction_type,
+                        correction_details
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 `;
 
 
-                // Execute UPDATE query
                 db.query(
-                    updateSql,
-                    [ticketNumber, ticketId],
+                    sql,
+                    [
+                        university_id,
+                        temporaryTicketNumber,
+                        form_number,
+                        student_name,
+                        roll_number,
+                        correction_type,
+                        correction_details
+                    ],
+                    (err, result) => {
 
-                    (err) => {
-
-                        // UPDATE error
+                        // INSERT error
                         if (err) {
 
                             return db.rollback(() => {
 
                                 console.error(
-                                    "Error updating ticket number:",
+                                    "Error creating ticket:",
                                     err.message
                                 );
 
                                 return res.status(500).json({
-                                    message: "Failed to generate ticket number"
+                                    message:
+                                        "Failed to create ticket"
                                 });
                             });
-                        };
+                        }
 
 
-                        // Commit transaction
-                        // if UPDATE and and INSERT query run successfully then always save the changes inside the transaction
-                        db.commit((err) => {
+                        //  GET TICKET ID =================
 
-                            // COMMIT error
-                            if (err) {
+                        const ticketId =
+                            result.insertId;
 
-                                return db.rollback(() => {
 
-                                    console.error(
-                                        "Transaction commit failed:",
-                                        err.message
-                                    );
+                        //  GENERATE FINAL TICKET NUMBER =================
 
-                                    return res.status(500).json({
-                                        message: "Failed to create ticket"
+                        const ticketNumber =
+                            `MGSU-${currentYear}-${String(ticketId).padStart(4, "0")}`;
+
+
+                        //  UPDATE TICKET NUMBER =================
+
+                        const updateSql = `
+                            UPDATE tickets
+                            SET ticket_number = ?
+                            WHERE id = ?
+                        `;
+
+
+                        db.query(
+                            updateSql,
+                            [
+                                ticketNumber,
+                                ticketId
+                            ],
+                            (err) => {
+
+                                // UPDATE error
+                                if (err) {
+
+                                    return db.rollback(() => {
+
+                                        console.error(
+                                            "Error updating ticket number:",
+                                            err.message
+                                        );
+
+                                        return res.status(500).json({
+                                            message:
+                                                "Failed to generate ticket number"
+                                        });
                                     });
+                                }
+
+
+                                //  COMMIT TRANSACTION =================
+
+                                db.commit((err) => {
+
+                                    // COMMIT error
+                                    if (err) {
+
+                                        return db.rollback(() => {
+
+                                            console.error(
+                                                "Transaction commit failed:",
+                                                err.message
+                                            );
+
+                                            return res.status(500).json({
+                                                message:
+                                                    "Failed to create ticket"
+                                            });
+                                        });
+                                    }
+
+
+                                    //  SUCCESS =================
+
+                                    return res.status(201).json({
+
+                                        message:
+                                            "Ticket created successfully",
+
+                                        ticketId:
+                                            ticketId,
+
+                                        ticket_number:
+                                            ticketNumber
+                                    });
+
                                 });
+
                             }
+                        );
 
-
-                            // Success response
-                            return res.status(201).json({
-                                message: "Ticket created successfully",
-                                ticketId: ticketId,
-                                ticket_number: ticketNumber
-                            });
-                        });
                     }
                 );
+
             }
         );
+
     });
 };
-
 
 
 // =============== updateTicketStatus =====================
