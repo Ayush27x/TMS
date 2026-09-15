@@ -1,9 +1,7 @@
 // Controller function
 
-
 // Import Database
 const db = require("../config/db");
-
 
 
 // =============== getTickets =====================
@@ -11,66 +9,423 @@ const db = require("../config/db");
 
 const getTickets = (req, res) => {
 
-
-    //Get logged-in user's Role and university id
-    const {role, university_id} = req.user;
-
-
-    let sql;
-    let values = [];
+    // Get logged-in user's role and university id
+    const { role, university_id } = req.user;
 
 
-    // Operator can see all ticket
-    if (role === "OPERATOR") {
+    // Get filters and pagination values from URL query
+    const {
+        status,
+        roll_number,
+        student_name,
+        ticket_number,
+        page,
+        limit
+    } = req.query;
 
-        sql = `
-                SELECT *
-                FROM tickets
-                `;
+
+    // STATUS VALIDATION =================
+
+    const allowedStatuses = [
+        "NEW",
+        "IN_PROGRESS",
+        "COMPLETED",
+        "CORRECTION_REQUIRED"
+    ];
+
+    if (
+        status &&
+        !allowedStatuses.includes(status)
+    ) {
+        return res.status(400).json({
+            message: "Invalid Status"
+        });
     }
 
 
-        // University can see only its own tickets
-        else if (role === "UNIVERSITY") {
+    // PAGE VALIDATION =================
 
-            sql = `
-                SELECT * 
-                FROM tickets
-                WHERE university_id = ?
-                `;
+    if (
+        page &&
+        (
+            !Number.isInteger(Number(page)) ||
+            Number(page) < 1
+        )
+    ) {
+        return res.status(400).json({
+            message: "Page must be a positive number"
+        });
+    }
 
-                values = [university_id];
+
+    //  LIMIT VALIDATION =================
+
+    if (
+        limit &&
+        (
+            !Number.isInteger(Number(limit)) ||
+            Number(limit) < 1
+        )
+    ) {
+        return res.status(400).json({
+            message: "Limit must be a positive number"
+        });
+    }
+
+
+    //  MAX LIMIT =================
+
+    if (
+        limit &&
+        Number(limit) > 100
+    ) {
+        return res.status(400).json({
+            message: "Limit cannot be greater than 100"
+        });
+    }
+
+
+    //  PAGINATION =================
+
+    const currentPage = Number(page) || 1;
+
+    const itemsPerPage = Number(limit) || 10;
+
+    const offset =
+        (currentPage - 1) * itemsPerPage;
+
+
+    //  SQL SETUP =================
+
+    let sql;
+
+    let countSql;
+
+    let values = [];
+
+    let countValues = [];
+
+
+    //  OPERATOR =================
+
+    // Operator can see all tickets
+    if (role === "OPERATOR") {
+
+        sql = `
+            SELECT *
+            FROM tickets
+            WHERE 1 = 1
+        `;
+
+        countSql = `
+            SELECT COUNT(*) AS total
+            FROM tickets
+            WHERE 1 = 1
+        `;
+    }
+
+
+    //  UNIVERSITY =================
+
+    // University can see only its own tickets
+    else if (role === "UNIVERSITY") {
+
+        sql = `
+            SELECT *
+            FROM tickets
+            WHERE university_id = ?
+        `;
+
+        values = [university_id];
+
+
+        countSql = `
+            SELECT COUNT(*) AS total
+            FROM tickets
+            WHERE university_id = ?
+        `;
+
+        countValues = [university_id];
+    }
+
+
+    //  UNKNOWN ROLE =================
+
+    else {
+
+        return res.status(403).json({
+            message: "Access denied"
+        });
+    }
+
+
+    //  STATUS FILTER =================
+
+    if (status) {
+
+        sql += `
+            AND status = ?
+        `;
+
+        values.push(status);
+
+
+        countSql += `
+            AND status = ?
+        `;
+
+        countValues.push(status);
+    }
+
+
+    //  ROLL NUMBER FILTER =================
+
+    if (roll_number) {
+
+        sql += `
+            AND roll_number = ?
+        `;
+
+        values.push(roll_number);
+
+
+        countSql += `
+            AND roll_number = ?
+        `;
+
+        countValues.push(roll_number);
+    }
+
+
+    //  STUDENT NAME FILTER =================
+
+    if (student_name) {
+
+        sql += `
+            AND student_name LIKE ?
+        `;
+
+        values.push(
+            `%${student_name}%`
+        );
+
+
+        countSql += `
+            AND student_name LIKE ?
+        `;
+
+        countValues.push(
+            `%${student_name}%`
+        );
+    }
+
+
+    //  TICKET NUMBER FILTER =================
+
+    if (ticket_number) {
+
+        sql += `
+            AND ticket_number LIKE ?
+        `;
+
+        values.push(
+            `%${ticket_number}%`
+        );
+
+
+        countSql += `
+            AND ticket_number LIKE ?
+        `;
+
+        countValues.push(
+            `%${ticket_number}%`
+        );
+    }
+
+
+    //  PAGINATION =================
+
+    sql += `
+        LIMIT ?
+        OFFSET ?
+    `;
+
+    values.push(
+        itemsPerPage,
+        offset
+    );
+
+
+    //  GET TOTAL COUNT =================
+
+    db.query(
+        countSql,
+        countValues,
+        (err, countResult) => {
+
+            // Count query error
+            if (err) {
+
+                console.error(
+                    "Error counting tickets:",
+                    err.message
+                );
+
+                return res.status(500).json({
+                    message:
+                        "Failed to count tickets"
+                });
             }
 
-                // Unknown role
-                else {
-                    return res.status(403).json({
-                        message : "access dined"
+
+            // Total matching tickets
+            const totalTickets =
+                countResult[0].total;
+
+
+            // Calculate total pages
+            const totalPages =
+                Math.ceil(
+                    totalTickets / itemsPerPage
+                );
+
+
+            //  GET TICKETS =================
+
+            db.query(
+                sql,
+                values,
+                (err, result) => {
+
+                    // Database error
+                    if (err) {
+
+                        console.error(
+                            "Error fetching tickets:",
+                            err.message
+                        );
+
+                        return res.status(500).json({
+                            message:
+                                "Failed to fetch tickets"
+                        });
+                    }
+
+
+                    //  SUCCESS =================
+
+                    return res.json({
+
+                        tickets: result,
+
+                        pagination: {
+
+                            currentPage:
+                                currentPage,
+
+                            limit:
+                                itemsPerPage,
+
+                            totalTickets:
+                                totalTickets,
+
+                            totalPages:
+                                totalPages
+                        }
+                    });
+                }
+            );
+        }
+    );
+};
+
+
+//============== GET TICKET STATE =============
+// Get ticket statistics for dashboard
+//.............................................
+
+const getTicketState = (req, res) => {
+
+    const {role, university_id} = req.user;
+
+
+    // Operator========
+    // Operator can see statistic of all tickets
+    if (role === "OPERATOR") {
+
+        const sql = `
+            SELECT 
+                COUNT(*) AS total,
+                SUM(status = 'NEW') AS NEW,
+                SUM(status = 'IN_PROGRESS') AS IN_PROGRESS,
+                SUM(status = 'COMPLETED') AS COMPLETED,
+                SUM(status = 'CORRECTION_REQUIRED') AS CORRECTION_REQUIRED
+            FROM tickets
+            `;
+
+            db.query(
+                sql,
+                (err, result) => {
+
+                    if(err) {
+                    console.error("Error fetching statistic : ",
+                        err.message
+                    );
+
+                    return res.status(500).json({
+                        message : "failed to fetching statistic"
                     });
                 }
 
+                //Success
+                return res.json(result[0]);
+            }
+        );
 
+        return;
+    }
 
-        db.query(sql, values, (err, result) => {
+    // UNIVERSITY========
+    if(role === "UNIVERSITY") {
 
-        // Error Section
-        if (err) {
+        const sql = `
+            SELECT 
+                COUNT(*) AS TOTAL,
+                SUM(status = 'NEW') AS NEW,
+                SUM(status = 'IN_PROGRESS') AS PROGRESS,
+                SUM(status = 'COMPLETED') AS COMPLETED,
+                SUM(status = 'CORRECTION_REQUIRED') AS CORRECTION_REQUIRED
+            FROM tickets
+            WHERE university_Id = ?
+            `;
 
-            console.error(
-                "Error fetching tickets:",
-                err.message
+            db.query(
+                sql,
+                [university_id],
+                (err, result) => {
+
+                    if(err) {
+
+                        console.error("Error fetching ticket statistics",
+                             err.message);
+
+                             return res.status(500).json({
+                                message : "Failed to fetch ticket statistics"
+                        });
+                    }
+
+                    // Success
+                    return res.json(result[0]);
+                }
             );
+            return;
+    }
 
-            return res.status(500).json({
-                message: "Failed to fetch tickets"
-            });
-        }
-
-        // Result Section
-        return res.json(result);
+    // Unknown Role=======
+    return res.status(403).json({
+        message : "Access denied"
     });
 };
-
 
 
 // =============== getTicketsById =====================
@@ -89,14 +444,14 @@ const getTicketById = (req, res) => {
             if (role === "OPERATOR") {
 
                 // Sql query 
-                const sql = `
+                sql = `
                 SELECT * FROM tickets 
                 WHERE id = ?`;
 
                 values = [id];
             }
 
-                else if (role = "UNIVERSITY") {
+                else if (role === "UNIVERSITY") {
 
                     sql = `
                         SELECT * FROM tickets
@@ -140,6 +495,114 @@ const getTicketById = (req, res) => {
                 return res.json(result[0]);
             }
         );
+};
+
+
+// ===============GET TICKET HISTORY=====================
+// Get history of a ticket
+const getTicketHistory = (req, res) => {
+
+    // Get ticket ID from URL
+    const {id} = req.params;
+
+    //Get Logged-in User's role and university id
+    const {role, university_id } = req.user;
+
+
+    // Check ticket status ========
+    let ticketSql;
+    let ticketValues;
+
+    // Operator can access and tickets
+    if (role === "OPERATOR") {
+
+        ticketSql = `
+            SELECT * FROM tickets
+            WHERE id = ?`;
+
+            ticketValues = [id]
+    }
+
+    // University can only access own tickets
+    else if (role === "UNIVERSITY") {
+
+        ticketSql = `
+            SELECT * FROM tickets
+            WHERE id = ?
+            AND
+            university_id = ?`;
+
+            ticketValues = [id, university_id];
+    }
+
+    // Unknown role
+    else {
+        return res.status(403).json({
+            message : "access denied"
+        });
+    }
+
+    // Check ticket ========
+    db.query(
+        ticketSql,
+        ticketValues,
+        (err, result) => {
+
+            if(err) {
+                console.error("Error checking ticket : ", err.message);
+
+                return res.status(500).json({
+                    message : "Access dined"
+                });
+            }
+
+            // Ticket not fount
+            if(result.length === 0) {
+
+                res.status(404).json({
+                    message : "Ticket not found"
+                });
+            }
+
+            // Get history
+            const historySql = `
+                    SELECT
+                        th.id,
+                        th.ticket_id,
+                        th.action,
+                        th.old_status,
+                        th.new_status,
+                        th.created_at,
+                        u.username AS changed_by
+                        FROM ticket_history th
+                        JOIN users u
+                            ON th.user_id = u.id
+                        WHERE th.ticket_id = ?
+                        ORDER BY th.created_at ASC
+                        `;
+
+                        db.query(
+                            historySql,
+                            [id],
+                            (err, historyResult) => {
+
+                                if(err) {
+                                    console.error("Error fetching ticket history :", err.message);
+
+                                    return res.status(500).json({
+                                        message: "Failed to fetch ticket"
+                                    });
+                                }
+
+                                // Success
+                                return res.json({
+                                    ticket_id : id,
+                                    history : historyResult
+                    });
+                }
+            );
+        }
+    );  
 };
 
 
@@ -322,6 +785,8 @@ const createTicket = (req, res) => {
 
 
 // =============== updateTicketStatus =====================
+// Update ticket status and remarks
+// Only OPERATOR can access this api
 //..........................................................
 
 const updateTicketStatus = (req, res) => {
@@ -330,7 +795,9 @@ const updateTicketStatus = (req, res) => {
     const { id } = req.params;
 
     // Get new status from request body
-    const { status } = req.body;
+    const { status,
+            remark
+     } = req.body;
 
 
     // Allowed ticket statuses
@@ -350,6 +817,14 @@ const updateTicketStatus = (req, res) => {
         });
     }
 
+
+    // REMARKS VALIDATION
+    if (status === "CORRECTION_REQUIRED" && !remark) {
+
+        return res.status(400).json({
+            message : "Remark is required for correction"
+        });
+    }
 
     // ================= START TRANSACTION =================
 
@@ -371,7 +846,9 @@ const updateTicketStatus = (req, res) => {
         // ================= GET OLD STATUS =================
 
         const getTicketSql = `
-            SELECT status
+            SELECT 
+            status,
+            remark
             FROM tickets
             WHERE id = ?
         `;
@@ -414,19 +891,28 @@ const updateTicketStatus = (req, res) => {
                 // Store current/old status
                 const oldStatus = result[0].status;
 
+                // Store current/old remark
+                const oldRemark = result[0].remark;
+
 
                 // ================= UPDATE STATUS =================
 
                 const updateSql = `
                     UPDATE tickets
-                    SET status = ?
+                    SET 
+                    status = ?,
+                    remark = ?
                     WHERE id = ?
                 `;
 
 
                 db.query(
                     updateSql,
-                    [status, id],
+                    [
+                        status,
+                        remark || null,
+                         id
+                    ],
                     (err) => {
 
                         // Update failed
@@ -525,7 +1011,10 @@ const updateTicketStatus = (req, res) => {
                                             oldStatus,
 
                                         new_status:
-                                            status
+                                            status,
+
+                                        remark :
+                                            remark || null
                                     });
 
                                 });
@@ -543,10 +1032,320 @@ const updateTicketStatus = (req, res) => {
 };
 
 
-module.exports = {
-    getTickets,
-    getTicketById,
-    createTicket,
-    updateTicketStatus
+// =============== UPLOAD TICKET ATTACHMENT =================
+// .........................................................
+
+const uploadTicketAttachment = (req, res) => {
+
+    const { id } = req.params;
+    const { role, university_id } = req.user;
+
+
+    // Check whether file is uploaded
+    if (!req.file) {
+
+        return res.status(400).json({
+            message: "Marksheet image is required"
+        });
+    }
+
+
+    let ticketSql;
+    let ticketValues;
+
+
+    // Operator can access any ticket
+    if (role === "OPERATOR") {
+
+        ticketSql = `
+            SELECT *
+            FROM tickets
+            WHERE id = ?
+        `;
+
+        ticketValues = [id];
+    }
+
+
+    // University can access only its own tickets
+    else if (role === "UNIVERSITY") {
+
+        ticketSql = `
+            SELECT *
+            FROM tickets
+            WHERE id = ?
+            AND university_id = ?
+        `;
+
+        ticketValues = [id, university_id];
+    }
+
+
+    else {
+
+        return res.status(403).json({
+            message: "Access denied"
+        });
+    }
+
+
+    // Check ticket
+    db.query(
+        ticketSql,
+        ticketValues,
+        (err, result) => {
+
+            if (err) {
+
+                console.error(
+                    "Error checking ticket:",
+                    err.message
+                );
+
+                return res.status(500).json({
+                    message: "Database error"
+                });
+            }
+
+
+            // Ticket does not exist
+            if (result.length === 0) {
+
+                return res.status(404).json({
+                    message: "Ticket not found"
+                });
+            }
+
+
+            // Check if attachment already exists
+            const checkSql = `
+                SELECT id
+                FROM ticket_attachments
+                WHERE ticket_id = ?
+            `;
+
+
+            db.query(
+                checkSql,
+                [id],
+                (err, attachmentResult) => {
+
+                    if (err) {
+
+                        console.error(
+                            "Error checking attachment:",
+                            err.message
+                        );
+
+                        return res.status(500).json({
+                            message: "Database error"
+                        });
+                    }
+
+
+                    // Only one marksheet allowed per ticket
+                    if (attachmentResult.length > 0) {
+
+                        return res.status(409).json({
+                            message: "Marksheet already exists"
+                        });
+                    }
+
+
+                    // Save attachment information
+                    const insertSql = `
+                        INSERT INTO ticket_attachments
+                        (
+                            ticket_id,
+                            file_name,
+                            file_path,
+                            file_type,
+                            file_size
+                        )
+                        VALUES (?, ?, ?, ?, ?)
+                    `;
+
+
+                    const insertValues = [
+                        id,
+                        req.file.originalname,
+                        req.file.path,
+                        req.file.mimetype,
+                        req.file.size
+                    ];
+
+
+                    db.query(
+                        insertSql,
+                        insertValues,
+                        (err, result) => {
+
+                            if (err) {
+
+                                console.error(
+                                    "Error saving attachment:",
+                                    err.message
+                                );
+
+                                return res.status(500).json({
+                                    message: "Failed to save attachment"
+                                });
+                            }
+
+
+                            // Upload successful
+                            return res.status(201).json({
+
+                                message:
+                                    "Marksheet uploaded successfully",
+
+                                attachment: {
+
+                                    ticket_id: id,
+
+                                    file_name:
+                                        req.file.originalname,
+
+                                    file_type:
+                                        req.file.mimetype,
+
+                                    file_size:
+                                        req.file.size
+                                }
+                            });
+                        }
+                    );
+                }
+            );
+        }
+    );
 };
 
+
+// =============== GET TICKET ATTACHMENT =================
+// .........................................................
+
+const getTicketAttachment = (req, res) => {
+
+    const { id } = req.params;
+    const { role, university_id } = req.user;
+
+    let ticketSql;
+    let ticketValues;
+
+    // Operator can access ant ticket
+    if(role === "OPERATOR") {
+        
+        ticketSql = `
+        SELECT * FROM
+        tickets 
+        WHERE 
+        id = ?
+        `;
+
+        ticketValues = [id];
+    }
+
+    // University can access only own tickets
+    else if (role === "UNIVERSITY") {
+
+        ticketSql = `
+            SELECT * FROM 
+            tickets
+            WHERE id = ?
+            AND 
+            university_id = ?
+            `;
+
+            ticketValues = [id, university_id];
+    }
+
+    else {
+
+        return res.status(403).json({
+            message : "Access denied"
+        });
+
+    }
+
+    db.query(
+        ticketSql,
+        ticketValues,
+        (err, result) => {
+
+            if(err) {
+                console.error(
+                    "Error checking ticket :",
+                    err.message
+                );
+
+                return res.status(500).json({
+                    message : "Database Error"
+                });
+            }
+
+            // Ticket not found
+            if(result.length === 0) {
+                return res.status(404).json({
+                    message : "Ticket not found"
+                });
+            }
+
+            // Get attachment
+            const attachmentSql = `
+                SELECT
+                id,
+                ticket_id,
+                file_name,
+                file_path,
+                file_type,
+                file_size,
+                created_at
+                FROM ticket_attachments
+                WHERE ticket_id = ?`;
+
+                db.query(
+                    attachmentSql,
+                    [id],
+                    (err, attachmentResult) => {
+
+                        if(err) {
+
+                        console.error("Error fetching attachment",
+                            err.message
+                        );
+
+                        return res.status(500).json({
+                            message : "Database error"
+                        });
+                    }
+
+                    // Attachment not found
+                    if(attachmentResult.length === 0) {
+
+                        return res.status(404).json({
+                            message : "Attachment not found"
+                        });
+                    }
+
+                    // Return attachment details
+                    return res.json(
+                        attachmentResult[0]
+                    );
+                }
+            );
+        }
+    );
+};
+
+
+module.exports = {
+    getTickets,
+    getTicketState,
+    getTicketById,
+    getTicketHistory,
+    createTicket,
+    updateTicketStatus,
+    uploadTicketAttachment,
+    getTicketAttachment
+};
