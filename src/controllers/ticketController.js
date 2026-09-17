@@ -114,7 +114,7 @@ const getTickets = (req, res) => {
         sql = `
             SELECT *
             FROM tickets
-            WHERE 1 = 1
+            WHERE 1 = 1  
         `;
 
         countSql = `

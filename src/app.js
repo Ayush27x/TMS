@@ -1,7 +1,7 @@
 // Import express, cors
 const express = require("express");
-const cors = require("cors");
-const app = express();
+const cors = require("cors"); //cross-origin requests allow
+const app = express(); // Create application(app) object
 const path = require("path");
 
 // Import db.js, ticketRoutes.js, authRoutes.js
@@ -11,6 +11,7 @@ const authRoutes = require("./routes/authRoutes");
 
 //cors send request react to express
 //middleware
+//app.use => register in express application
 app.use(cors());
 app.use(express.json());
 app.use(

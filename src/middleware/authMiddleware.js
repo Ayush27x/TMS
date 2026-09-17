@@ -10,6 +10,7 @@ const authenticateToken = (req, res, next) => {
 
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
+    
     // Check if Authorization header exists
     if(!authHeader) {
 

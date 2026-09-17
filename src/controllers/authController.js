@@ -1,6 +1,7 @@
 // Actual login works with JWT and bcrypt
 
 // Import database connection and bcrypt
+// Dependencies
 const db = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
@@ -12,6 +13,8 @@ const JWT_SECRET = "tms_super_secret_key";
 // ==================== LOGIN FUNCTION ====================
 
 const login = async (req, res) => {
+
+    console.log("LOGIN API HIT BY : ", req.body.username);
 
     // Extract username and password from request body
     const {
@@ -96,7 +99,6 @@ const login = async (req, res) => {
 
             // Send successful login response
             return res.json({
-
                 message: "Login successful",
 
                 token : token,
