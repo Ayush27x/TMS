@@ -21,12 +21,12 @@ const storage = multer.diskStorage({ //diskStorage means upload file on disk
 
 const fileFilter = (req, file, cd) => {
     
-    allowedTypes = [
-        "image/jpeg",
-        "image/png"
+    const allowedTypes = [
+            "image/jpeg",
+            "image/png"
     ];
 
-    if(allowedTypes.include(file.mimetype)) { 
+    if(allowedTypes.includes(file.mimetype)) { 
         cd(null, true);
     }
     else {

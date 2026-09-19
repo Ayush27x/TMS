@@ -355,9 +355,9 @@ const getTicketState = (req, res) => {
 
         const sql = `
             SELECT 
-                COUNT(*) AS total,
+                COUNT(*) AS TOTAL,
                 SUM(status = 'NEW') AS NEW,
-                SUM(status = 'IN_PROGRESS') AS IN_PROGRESS,
+                SUM(status = 'IN_PROGRESS') AS PROGRESS,
                 SUM(status = 'COMPLETED') AS COMPLETED,
                 SUM(status = 'CORRECTION_REQUIRED') AS CORRECTION_REQUIRED
             FROM tickets
@@ -573,6 +573,7 @@ const getTicketHistory = (req, res) => {
                         th.old_status,
                         th.new_status,
                         th.created_at,
+                        th.remark,
                         u.username AS changed_by
                         FROM ticket_history th
                         JOIN users u
@@ -1044,9 +1045,11 @@ const updateTicketStatus = (req, res) => {
                                 user_id,
                                 action,
                                 old_status,
-                                new_status
+                                new_status,
+                                remark
+
                             )
-                            VALUES (?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?)
                         `;
 
 
@@ -1061,7 +1064,8 @@ const updateTicketStatus = (req, res) => {
                                 userId,
                                 "STATUS_UPDATED",
                                 oldStatus,
-                                status
+                                status,
+                                remark || null
                             ],
                             (err) => {
 
@@ -1404,7 +1408,7 @@ const getTicketAttachment = (req, res) => {
                 file_path,
                 file_type,
                 file_size,
-                created_at
+                updated_at
                 FROM ticket_attachments
                 WHERE ticket_id = ?`;
 
