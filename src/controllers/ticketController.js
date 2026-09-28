@@ -16,8 +16,7 @@ const getTickets = (req, res) => {
     // Get filters and pagination values from URL query
     const {
         status,
-        roll_number,
-        student_name,
+        document_type,
         ticket_number,
         page,
         limit
@@ -175,50 +174,34 @@ const getTickets = (req, res) => {
         `;
 
         countValues.push(status);
-    }
-
-
-    //  ROLL NUMBER FILTER =================
-
-    if (roll_number) {
+    } else {
 
         sql += `
-            AND roll_number = ?
-        `;
-
-        values.push(roll_number);
-
-
-        countSql += `
-            AND roll_number = ?
-        `;
-
-        countValues.push(roll_number);
+            AND status != 'COMPLETED'`;
     }
 
-
-    //  STUDENT NAME FILTER =================
-
-    if (student_name) {
-
-        sql += `
-            AND student_name LIKE ?
+    countSql += `
+        AND status != 'COMPLETED'
         `;
 
-        values.push(
-            `%${student_name}%`
-        );
+
+    // DOCUMENT TYPE=============== 
 
 
-        countSql += `
-            AND student_name LIKE ?
-        `;
+    if (document_type) {
 
-        countValues.push(
-            `%${student_name}%`
-        );
-    }
+    sql += `
+        AND document_type LIKE ?
+    `;
 
+    values.push(`%${document_type}%`);
+
+    countSql += `
+        AND document_type LIKE ?
+    `;
+
+    countValues.push(`%${document_type}%`);
+}
 
     //  TICKET NUMBER FILTER =================
 
@@ -490,9 +473,38 @@ const getTicketById = (req, res) => {
                                                                         });
                                     }
                 
-                // Success
-                // First item of the [0]array
-                return res.json(result[0]);
+                const ticket = result[0];
+
+                const correctionSql = `
+                    SELECT
+                        id,
+                        ticket_id,
+                        correction_type,
+                        correction_details
+                    FROM ticket_corrections
+                    WHERE ticket_id = ?
+                    ORDER BY id ASC
+                    `;
+
+                    db.query(
+                        correctionSql,
+                        [id],
+                        (err, correctionResult) => {
+
+                            if(err) {
+                                console.error("Error fetching correction : ", err.message);
+
+                                return res.status(500).json({
+                                    message : "failed to fetch"
+                                });
+                            }
+
+                            return res.json({
+                                ...ticket,
+                                corrections : correctionResult
+                            });
+                        }
+                    );
             }
         );
 };
@@ -612,29 +624,24 @@ const getTicketHistory = (req, res) => {
 
 const createTicket = (req, res) => {
 
-    //  GET DATA FROM REQUEST =================
-
+    // GET DATA FROM REQUEST
     const {
         form_number,
-        student_name,
-        roll_number,
-        correction_type,
-        correction_details
+        document_type,
+        corrections
     } = req.body;
 
 
     // Get university ID from logged-in user
-    const { university_id } = req.user;
+    const university_id = req.user.university_id;
 
 
-    //  REQUIRED FIELD VALIDATION =================
-
+    // REQUIRED FIELD VALIDATION
     if (
         !form_number ||
-        !student_name ||
-        !roll_number ||
-        !correction_type ||
-        !correction_details
+        ! document_type ||
+        !corrections ||
+        corrections.length === 0
     ) {
 
         return res.status(400).json({
@@ -643,14 +650,12 @@ const createTicket = (req, res) => {
     }
 
 
-    //  CURRENT YEAR =================
-
+    // CURRENT YEAR
     const currentYear =
         new Date().getFullYear();
 
 
-    //  START TRANSACTION =================
-
+    // START TRANSACTION
     db.beginTransaction((err) => {
 
         if (err) {
@@ -661,14 +666,12 @@ const createTicket = (req, res) => {
             );
 
             return res.status(500).json({
-                message:
-                    "Failed to start transaction"
+                message: "Failed to start transaction"
             });
         }
 
 
-        //  CHECK DUPLICATE =================
-
+        // CHECK DUPLICATE TICKET
         const duplicateSql = `
             SELECT
                 id,
@@ -677,7 +680,6 @@ const createTicket = (req, res) => {
             FROM tickets
             WHERE university_id = ?
             AND form_number = ?
-            AND correction_type = ?
             AND status IN (
                 'NEW',
                 'IN_PROGRESS',
@@ -691,8 +693,7 @@ const createTicket = (req, res) => {
             duplicateSql,
             [
                 university_id,
-                form_number,
-                correction_type
+                form_number
             ],
             (err, duplicateResult) => {
 
@@ -714,8 +715,7 @@ const createTicket = (req, res) => {
                 }
 
 
-                //  DUPLICATE FOUND =================
-
+                // DUPLICATE FOUND
                 if (duplicateResult.length > 0) {
 
                     const existingTicket =
@@ -726,7 +726,7 @@ const createTicket = (req, res) => {
                         return res.status(409).json({
 
                             message:
-                                "An active ticket already exists for this correction",
+                                "An active ticket already exists for this form",
 
                             ticket_number:
                                 existingTicket.ticket_number,
@@ -738,25 +738,20 @@ const createTicket = (req, res) => {
                 }
 
 
-                //  TEMPORARY TICKET NUMBER =================
-
+                // TEMPORARY TICKET NUMBER(DATABASE)
                 const temporaryTicketNumber =
                     `TEMP-${Date.now()}`;
 
 
-                //  INSERT TICKET =================
-
+                // INSERT TICKET
                 const sql = `
                     INSERT INTO tickets (
                         university_id,
                         ticket_number,
                         form_number,
-                        student_name,
-                        roll_number,
-                        correction_type,
-                        correction_details
+                        document_type
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?)
                 `;
 
 
@@ -766,14 +761,11 @@ const createTicket = (req, res) => {
                         university_id,
                         temporaryTicketNumber,
                         form_number,
-                        student_name,
-                        roll_number,
-                        correction_type,
-                        correction_details
+                        document_type
                     ],
                     (err, result) => {
 
-                        // INSERT error
+                        // INSERT ERROR
                         if (err) {
 
                             return db.rollback(() => {
@@ -791,95 +783,151 @@ const createTicket = (req, res) => {
                         }
 
 
-                        //  GET TICKET ID =================
-
+                        // GET TICKET ID
                         const ticketId =
                             result.insertId;
 
 
-                        //  GENERATE FINAL TICKET NUMBER =================
-
-                        const ticketNumber =
-                            `MGSU-${currentYear}-${String(ticketId).padStart(4, "0")}`;
-
-
-                        //  UPDATE TICKET NUMBER =================
-
-                        const updateSql = `
-                            UPDATE tickets
-                            SET ticket_number = ?
-                            WHERE id = ?
+                        // TICKET CORRECTION DETAILS
+                        const correctionSql = `
+                            INSERT INTO ticket_corrections (
+                                ticket_id,
+                                correction_type,
+                                correction_details
+                            )
+                            VALUES (?, ?, ?)
                         `;
 
 
-                        db.query(
-                            updateSql,
-                            [
-                                ticketNumber,
-                                ticketId
-                            ],
-                            (err) => {
-
-                                // UPDATE error
-                                if (err) {
-
-                                    return db.rollback(() => {
-
-                                        console.error(
-                                            "Error updating ticket number:",
-                                            err.message
-                                        );
-
-                                        return res.status(500).json({
-                                            message:
-                                                "Failed to generate ticket number"
-                                        });
-                                    });
-                                }
+                        // SAVE ALL CORRECTIONS
+                        let completed = 0;
 
 
-                                //  COMMIT TRANSACTION =================
+                        corrections.forEach((correction) => {
 
-                                db.commit((err) => {
+                            db.query(
+                                correctionSql,
+                                [
+                                    ticketId,
+                                    correction.type,
+                                    correction.details
+                                ],
+                                (err) => {
 
-                                    // COMMIT error
+                                    // CORRECTION INSERT ERROR
                                     if (err) {
 
                                         return db.rollback(() => {
 
                                             console.error(
-                                                "Transaction commit failed:",
+                                                "Error saving correction:",
                                                 err.message
                                             );
 
                                             return res.status(500).json({
                                                 message:
-                                                    "Failed to create ticket"
+                                                    "Failed to save corrections"
                                             });
                                         });
                                     }
 
 
-                                    //  SUCCESS =================
+                                    // One correction successfully saved
+                                    completed++;
 
-                                    return res.status(201).json({
 
-                                        message:
-                                            "Ticket created successfully",
+                                    // ALL CORRECTIONS SAVED
+                                    if (
+                                        completed ===
+                                        corrections.length
+                                    ) {
 
-                                        ticketId:
-                                            ticketId,
+                                        // GENERATE FINAL TICKET NUMBER
+                                        const ticketNumber =
+                                            `MGSU-${currentYear}-${String(ticketId).padStart(4, "0")}`;
 
-                                        ticket_number:
-                                            ticketNumber
-                                    });
 
-                                });
+                                        // UPDATE TICKET NUMBER
+                                        const updateSql = `
+                                            UPDATE tickets
+                                            SET ticket_number = ?
+                                            WHERE id = ?
+                                        `;
 
-                            }
-                        );
 
-                    }
+                                        db.query(
+                                            updateSql,
+                                            [
+                                                ticketNumber,
+                                                ticketId
+                                            ],
+                                            (err) => {
+
+                                                // UPDATE ERROR
+                                                if (err) {
+
+                                                    return db.rollback(() => {
+
+                                                        console.error(
+                                                            "Error updating ticket number:",
+                                                            err.message
+                                                        );
+
+                                                        return res.status(500).json({
+                                                            message:
+                                                                "Failed to generate ticket number"
+                                                        });
+                                                    });
+                                                }
+
+
+                                                // COMMIT TRANSACTION
+                                                db.commit((err) => {
+
+                                                    // COMMIT ERROR
+                                                    if (err) {
+
+                                                        return db.rollback(() => {
+
+                                                            console.error(
+                                                                "Transaction commit failed:",
+                                                                err.message
+                                                            );
+
+                                                            return res.status(500).json({
+                                                                message:
+                                                                    "Failed to create ticket"
+                                                            });
+                                                        });
+                                                    }
+
+
+                                                    // SUCCESS
+                                                    return res.status(201).json({
+
+                                                        message:
+                                                            "Ticket created successfully",
+
+                                                        ticketId:
+                                                            ticketId,
+
+                                                        ticket_number:
+                                                            ticketNumber
+                                                    });
+
+                                                });
+
+                                            }
+                                        );
+
+                                    }
+
+                                }
+                            );
+
+                        }
+
+                    )}
                 );
 
             }
