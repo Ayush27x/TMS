@@ -10,6 +10,7 @@ const {
     getTicketById,
     getTicketHistory,
     createTicket,
+    reopenTicket,
     updateTicketStatus,
     uploadTicketAttachment,
     getTicketAttachment
@@ -68,6 +69,15 @@ router.post(
     authenticateToken,
     createTicket
 );
+
+
+// ================= REOPENED TICKET =================
+router.post(
+    "/:id/reopen",
+    authenticateToken,
+    authorizeRole("UNIVERSITY"),
+    reopenTicket
+)
 
 
 // ================= UPDATE TICKET STATUS =================

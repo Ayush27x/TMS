@@ -937,6 +937,87 @@ const createTicket = (req, res) => {
 };
 
 
+// =============== reopenTicket =====================
+//..........................................................
+const reopenTicket = async (req, res) => {
+    const ticketId = req.params.id;
+    const university_id = req.user.university_id;
+    const {remark} = req.body;
+
+
+    // Remark required
+    if (!remark || remark.trim()) {
+        return res.status(400).json({
+            message : "Reopen remark is required"
+        });
+    }
+
+    try {
+        //Ticket check
+        const [tickets] = await db.query(
+            `SELECT id, university_id, status
+            FROM tickets
+            WHERE id = ?`,
+            [ticketId]
+        );
+
+        if(tickets.length === 0) {
+            return res.status(404).json({
+                message : "Ticket not found"
+            });
+        }
+
+        const ticket = tickets[0];
+
+        // University can access only own ticket
+        if (ticket.university_id !== university_id) {
+            return res.status(403).json({
+                message : "You are not allowed to reopen this ticket"
+            });
+        }
+
+        // Only completed ticket can be reopened
+        if (ticket.status !== "COMPLETED") {
+            return res.status(400).json({
+                message : "Only completed ticket can be reopened"
+            });
+        }
+
+        // Update ticket status
+        await db.query(
+            `UPDATE tickets
+            SET status = 'REOPENED',
+                updated_at = NOW()
+            WHERE id = ?`,
+            [ticketId]
+        );
+
+        //Add history
+        await db.query(
+            `INSERT INTO ticket_history
+        (ticket_id, user_id, action, old_Status, new_status, remark)
+        VALUE (?, ?, ?, ?, ?, ?)`,
+        [
+            ticketId,
+            req.user.id,
+            "REOPENED",
+            "COMPLETED",
+            "REOPENED"
+        ]
+        );
+
+        return res.status(200).json({
+            message : "Ticket open successfully"
+        });
+    } catch (error) {
+        console.error("Reopen ticket error : ", error);
+
+        return res.status(500).json({
+            message : "Server Error"
+        });
+    }
+};
+
 // =============== updateTicketStatus =====================
 // Update ticket status and remarks
 // Only OPERATOR can access this api
@@ -1501,6 +1582,7 @@ module.exports = {
     getTicketById,
     getTicketHistory,
     createTicket,
+    reopenTicket,
     updateTicketStatus,
     uploadTicketAttachment,
     getTicketAttachment
