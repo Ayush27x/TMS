@@ -29,7 +29,8 @@ const getTickets = (req, res) => {
         "NEW",
         "IN_PROGRESS",
         "COMPLETED",
-        "CORRECTION_REQUIRED"
+        "CORRECTION_REQUIRED",
+        "REOPENED"
     ];
 
     if (
@@ -238,6 +239,9 @@ const getTickets = (req, res) => {
         offset
     );
 
+    console.log("COUNT SQL:", countSql);
+console.log("COUNT VALUES:", countValues);
+
 
     //  GET TOTAL COUNT =================
 
@@ -342,7 +346,8 @@ const getTicketState = (req, res) => {
                 SUM(status = 'NEW') AS NEW,
                 SUM(status = 'IN_PROGRESS') AS PROGRESS,
                 SUM(status = 'COMPLETED') AS COMPLETED,
-                SUM(status = 'CORRECTION_REQUIRED') AS CORRECTION_REQUIRED
+                SUM(status = 'CORRECTION_REQUIRED') AS CORRECTION_REQUIRED,
+                SUM(status = 'REOPENED') AS REOPENED
             FROM tickets
             `;
 
@@ -377,7 +382,8 @@ const getTicketState = (req, res) => {
                 SUM(status = 'NEW') AS NEW,
                 SUM(status = 'IN_PROGRESS') AS PROGRESS,
                 SUM(status = 'COMPLETED') AS COMPLETED,
-                SUM(status = 'CORRECTION_REQUIRED') AS CORRECTION_REQUIRED
+                SUM(status = 'CORRECTION_REQUIRED') AS CORRECTION_REQUIRED,
+                SUM(status = 'REOPENED') AS REOPENED
             FROM tickets
             WHERE university_Id = ?
             `;
@@ -940,13 +946,15 @@ const createTicket = (req, res) => {
 // =============== reopenTicket =====================
 //..........................................................
 const reopenTicket = async (req, res) => {
+
     const ticketId = req.params.id;
     const university_id = req.user.university_id;
-    const {remark} = req.body;
+    const { remark } = req.body;
 
+    console.log("REOPEN BODY:", req.body);
 
     // Remark required
-    if (!remark || remark.trim()) {
+    if (!remark || !remark.trim()) {
         return res.status(400).json({
             message : "Reopen remark is required"
         });
@@ -954,7 +962,7 @@ const reopenTicket = async (req, res) => {
 
     try {
         //Ticket check
-        const [tickets] = await db.query(
+        const [tickets] = await db.promise().query(
             `SELECT id, university_id, status
             FROM tickets
             WHERE id = ?`,
@@ -984,7 +992,7 @@ const reopenTicket = async (req, res) => {
         }
 
         // Update ticket status
-        await db.query(
+        await db.promise().query(
             `UPDATE tickets
             SET status = 'REOPENED',
                 updated_at = NOW()
@@ -993,7 +1001,7 @@ const reopenTicket = async (req, res) => {
         );
 
         //Add history
-        await db.query(
+        await db.promise().query(
             `INSERT INTO ticket_history
         (ticket_id, user_id, action, old_Status, new_status, remark)
         VALUE (?, ?, ?, ?, ?, ?)`,
@@ -1002,7 +1010,8 @@ const reopenTicket = async (req, res) => {
             req.user.id,
             "REOPENED",
             "COMPLETED",
-            "REOPENED"
+            "REOPENED",
+            remark.trim()
         ]
         );
 
