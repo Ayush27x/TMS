@@ -13,7 +13,9 @@
         reopenTicket,
         updateTicketStatus,
         uploadTicketAttachment,
-        getTicketAttachment
+        getTicketAttachment,
+        submitCorrection,
+        updateCorrectionDetails
     } = require("../controllers/ticketController");
 
     // Import Authentication Middleware
@@ -45,6 +47,23 @@
         authenticateToken,
         getTicketState
     );
+
+
+    // ================= UPDATE CORRECTION REQUIRED  =================
+    router.put(
+    "/:id/correction",
+    authenticateToken,
+    authorizeRole("UNIVERSITY"),
+    updateCorrectionDetails
+);
+
+    // ================= CORRECTION REQUIRED  =================
+    router.post(
+    "/:id/submit-correction",
+    authenticateToken,
+    authorizeRole("UNIVERSITY"),
+    submitCorrection
+);
 
     // ================= GET TICKET HISTORY =================
     router.get(

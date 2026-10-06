@@ -4,6 +4,7 @@
 const db = require("../config/db");
 
 
+
 // ================== getTickets =====================
 // Retrieve tickets from database and send response to client
 
@@ -1027,6 +1028,272 @@ const reopenTicket = async (req, res) => {
     }
 };
 
+
+// =============== SUBMIT CORRECTION =================
+
+const submitCorrection = async (req, res) => {
+
+    const ticketId = req.params.id;
+    const university_id = req.user.university_id;
+
+    try {
+
+        // 1. Ticket check
+        const [tickets] = await db.promise().query(
+            `SELECT id, university_id, status
+             FROM tickets
+             WHERE id = ?`,
+            [ticketId]
+        );
+
+        if (tickets.length === 0) {
+            return res.status(404).json({
+                message: "Ticket not found"
+            });
+        }
+
+        const ticket = tickets[0];
+
+
+        // 2. University ownership check
+        if (ticket.university_id !== university_id) {
+            return res.status(403).json({
+                message: "You are not allowed to submit correction"
+            });
+        }
+
+
+        // 3. Ticket must be CORRECTION_REQUIRED
+        if (ticket.status !== "CORRECTION_REQUIRED") {
+            return res.status(400).json({
+                message: "Correction can only be submitted for correction required ticket"
+            });
+        }
+
+
+        // 4. Change status
+        await db.promise().query(
+            `UPDATE tickets
+             SET status = 'IN_PROGRESS',
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [ticketId]
+        );
+
+
+        // 5. Add history
+        await db.promise().query(
+            `INSERT INTO ticket_history
+             (ticket_id, user_id, action, old_status, new_status, remark)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+                ticketId,
+                req.user.id,
+                "CORRECTION_SUBMITTED",
+                "CORRECTION_REQUIRED",
+                "IN_PROGRESS",
+                "University submitted corrected marksheet"
+            ]
+        );
+
+
+        return res.status(200).json({
+            message: "Correction submitted successfully"
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Submit correction error:",
+            error
+        );
+
+        return res.status(500).json({
+            message: "Server Error"
+        });
+    }
+};
+
+
+// =============== UPDATE CORRECTION DETAILS ===============
+
+const updateCorrectionDetails = async (req, res) => {
+
+    const ticketId = req.params.id;
+    const university_id = req.user.university_id;
+
+    const {
+        form_number,
+        document_type,
+        corrections
+    } = req.body;
+
+    try {
+
+        // 1. Check ticket
+        const [tickets] = await db.promise().query(
+            `SELECT id, university_id, status
+             FROM tickets
+             WHERE id = ?`,
+            [ticketId]
+        );
+
+        if (tickets.length === 0) {
+            return res.status(404).json({
+                message: "Ticket not found"
+            });
+        }
+
+        const ticket = tickets[0];
+
+
+        // 2. Check university ownership
+        if (ticket.university_id !== university_id) {
+            return res.status(403).json({
+                message: "You are not allowed to edit this ticket"
+            });
+        }
+
+
+        // 3. Only CORRECTION_REQUIRED ticket can be edited
+        if (ticket.status !== "CORRECTION_REQUIRED") {
+            return res.status(400).json({
+                message: "Only correction required ticket can be edited"
+            });
+        }
+
+
+        // 4. Basic validation
+        if (!form_number || !form_number.trim()) {
+            return res.status(400).json({
+                message: "Form number is required"
+            });
+        }
+
+        if (!document_type || !document_type.trim()) {
+            return res.status(400).json({
+                message: "Document type is required"
+            });
+        }
+
+        if (!Array.isArray(corrections) || corrections.length === 0) {
+            return res.status(400).json({
+                message: "At least one correction is required"
+            });
+        }
+
+
+        // 5. Start transaction
+        const connection = db.promise();
+
+        try {
+
+            await connection.beginTransaction();
+
+
+            // Update ticket details
+            await connection.query(
+                `UPDATE tickets
+                 SET form_number = ?,
+                     document_type = ?,
+                     updated_at = NOW()
+                 WHERE id = ?`,
+                [
+                    form_number.trim(),
+                    document_type.trim(),
+                    ticketId
+                ]
+            );
+
+
+            // Remove old corrections
+            await connection.query(
+                `DELETE FROM ticket_corrections
+                 WHERE ticket_id = ?`,
+                [ticketId]
+            );
+
+
+            // Insert updated corrections
+            for (const correction of corrections) {
+
+                if (
+                    !correction.correction_type ||
+                    !correction.correction_details
+                ) {
+                    throw new Error(
+                        "Invalid correction data"
+                    );
+                }
+
+                await connection.query(
+                    `INSERT INTO ticket_corrections
+                     (
+                         ticket_id,
+                         correction_type,
+                         correction_details
+                     )
+                     VALUES (?, ?, ?)`,
+                    [
+                        ticketId,
+                        correction.correction_type.trim(),
+                        correction.correction_details.trim()
+                    ]
+                );
+            }
+
+
+            // Add history
+            await connection.query(
+                `INSERT INTO ticket_history
+                 (
+                     ticket_id,
+                     user_id,
+                     action,
+                     old_status,
+                     new_status,
+                     remark
+                 )
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [
+                    ticketId,
+                    req.user.id,
+                    "CORRECTION_DETAILS_UPDATED",
+                    ticket.status,
+                    ticket.status,
+                    "University updated correction details"
+                ]
+            );
+
+
+            await connection.commit();
+
+
+            return res.status(200).json({
+                message: "Correction details updated successfully"
+            });
+
+        } catch (error) {
+
+            await connection.rollback();
+
+            throw error;
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Update correction details error:",
+            error
+        );
+
+        return res.status(500).json({
+            message: "Server Error"
+        });
+    }
+};
+
+
 // =============== updateTicketStatus =====================
 // Update ticket status and remarks
 // Only OPERATOR can access this api
@@ -1278,27 +1545,25 @@ const updateTicketStatus = (req, res) => {
 };
 
 
-// =============== UPLOAD TICKET ATTACHMENT =================
-// .........................................................
+// =============== UPLOAD / REPLACE TICKET ATTACHMENT =================
+// ....................................................................
+
+const fs = require("fs");
 
 const uploadTicketAttachment = (req, res) => {
 
     const { id } = req.params;
     const { role, university_id } = req.user;
 
-
     // Check whether file is uploaded
     if (!req.file) {
-
         return res.status(400).json({
             message: "Marksheet image is required"
         });
     }
 
-
     let ticketSql;
     let ticketValues;
-
 
     // Operator can access any ticket
     if (role === "OPERATOR") {
@@ -1312,8 +1577,7 @@ const uploadTicketAttachment = (req, res) => {
         ticketValues = [id];
     }
 
-
-    // University can access only its own tickets
+    // University can access only its own ticket
     else if (role === "UNIVERSITY") {
 
         ticketSql = `
@@ -1326,14 +1590,12 @@ const uploadTicketAttachment = (req, res) => {
         ticketValues = [id, university_id];
     }
 
-
     else {
 
         return res.status(403).json({
             message: "Access denied"
         });
     }
-
 
     // Check ticket
     db.query(
@@ -1353,7 +1615,6 @@ const uploadTicketAttachment = (req, res) => {
                 });
             }
 
-
             // Ticket does not exist
             if (result.length === 0) {
 
@@ -1362,14 +1623,14 @@ const uploadTicketAttachment = (req, res) => {
                 });
             }
 
+            const ticket = result[0];
 
-            // Check if attachment already exists
+            // Check existing attachment
             const checkSql = `
-                SELECT id
+                SELECT *
                 FROM ticket_attachments
                 WHERE ticket_id = ?
             `;
-
 
             db.query(
                 checkSql,
@@ -1388,8 +1649,120 @@ const uploadTicketAttachment = (req, res) => {
                         });
                     }
 
+                    // =================================================
+                    // UNIVERSITY - REPLACE MARKSHEET
+                    // =================================================
 
-                    // Only one marksheet allowed per ticket
+                    if (role === "UNIVERSITY") {
+
+                        // University can replace marksheet
+                        // only when correction is required
+                        if (ticket.status !== "CORRECTION_REQUIRED") {
+
+                            return res.status(400).json({
+                                message:
+                                    "Marksheet can only be replaced when correction is required"
+                            });
+                        }
+
+                        // Attachment must already exist
+                        if (attachmentResult.length === 0) {
+
+                            return res.status(404).json({
+                                message: "Existing marksheet not found"
+                            });
+                        }
+
+                        const oldAttachment =
+                            attachmentResult[0];
+
+                        // Delete old physical file
+                        fs.unlink(
+                            oldAttachment.file_path,
+                            (deleteError) => {
+
+                                if (deleteError) {
+
+                                    console.error(
+                                        "Error deleting old file:",
+                                        deleteError.message
+                                    );
+
+                                    // Continue with replacement
+                                    // even if old file is already missing
+                                }
+
+                                // Update existing attachment
+                                const updateSql = `
+                                    UPDATE ticket_attachments
+                                    SET
+                                        file_name = ?,
+                                        file_path = ?,
+                                        file_type = ?,
+                                        file_size = ?,
+                                        updated_at = NOW()
+                                    WHERE ticket_id = ?
+                                `;
+
+                                const updateValues = [
+                                    req.file.originalname,
+                                    req.file.path,
+                                    "ORIGINAL",
+                                    req.file.size,
+                                    id
+                                ];
+
+                                db.query(
+                                    updateSql,
+                                    updateValues,
+                                    (err) => {
+
+                                        if (err) {
+
+                                            console.error(
+                                                "Error replacing attachment:",
+                                                err.message
+                                            );
+
+                                            return res.status(500).json({
+                                                message:
+                                                    "Failed to replace marksheet"
+                                            });
+                                        }
+
+                                        return res.status(200).json({
+
+                                            message:
+                                                "Marksheet replaced successfully",
+
+                                            attachment: {
+
+                                                ticket_id: id,
+
+                                                file_name:
+                                                    req.file.originalname,
+
+                                                file_type:
+                                                    "ORIGINAL",
+
+                                                file_size:
+                                                    req.file.size
+                                            }
+                                        });
+                                    }
+                                );
+                            }
+                        );
+
+                        return;
+                    }
+
+                    // =================================================
+                    // OPERATOR - NORMAL UPLOAD
+                    // =================================================
+
+                    // Operator cannot upload another marksheet
+                    // if one already exists
                     if (attachmentResult.length > 0) {
 
                         return res.status(409).json({
@@ -1397,8 +1770,7 @@ const uploadTicketAttachment = (req, res) => {
                         });
                     }
 
-
-                    // Save attachment information
+                    // Save new attachment
                     const insertSql = `
                         INSERT INTO ticket_attachments
                         (
@@ -1411,20 +1783,18 @@ const uploadTicketAttachment = (req, res) => {
                         VALUES (?, ?, ?, ?, ?)
                     `;
 
-
                     const insertValues = [
                         id,
                         req.file.originalname,
                         req.file.path,
-                        req.file.mimetype,
+                        "ORIGINAL",
                         req.file.size
                     ];
-
 
                     db.query(
                         insertSql,
                         insertValues,
-                        (err, result) => {
+                        (err) => {
 
                             if (err) {
 
@@ -1434,12 +1804,11 @@ const uploadTicketAttachment = (req, res) => {
                                 );
 
                                 return res.status(500).json({
-                                    message: "Failed to save attachment"
+                                    message:
+                                        "Failed to save attachment"
                                 });
                             }
 
-
-                            // Upload successful
                             return res.status(201).json({
 
                                 message:
@@ -1453,7 +1822,7 @@ const uploadTicketAttachment = (req, res) => {
                                         req.file.originalname,
 
                                     file_type:
-                                        req.file.mimetype,
+                                        "ORIGINAL",
 
                                     file_size:
                                         req.file.size
@@ -1466,7 +1835,6 @@ const uploadTicketAttachment = (req, res) => {
         }
     );
 };
-
 
 // =============== GET TICKET ATTACHMENT =================
 // .........................................................
@@ -1594,5 +1962,7 @@ module.exports = {
     reopenTicket,
     updateTicketStatus,
     uploadTicketAttachment,
-    getTicketAttachment
+    getTicketAttachment,
+    submitCorrection,
+    updateCorrectionDetails
 };
